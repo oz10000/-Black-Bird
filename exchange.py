@@ -1,6 +1,7 @@
 # exchange.py
 # ============================================================
 # CLIENTE OKX V5 PARA FUTUROS (SWAP) – CONVERSIÓN INTERNA DE SÍMBOLOS
+# CON SOPORTE PARA set_leverage Y get_leverage_info
 # ============================================================
 
 import time
@@ -31,17 +32,12 @@ class Exchange:
     # Conversión de símbolos (único punto de verdad)
     # ------------------------------------------------------------
     def _instrument_id(self, symbol: str) -> str:
-        """
-        Convierte símbolo lógico (ej. 'BTC') a Instrument ID de OKX (ej. 'BTC-USDT-SWAP').
-        Si ya tiene el formato completo, lo devuelve tal cual.
-        """
         symbol = symbol.upper().strip()
         if symbol.endswith("-USDT-SWAP"):
             return symbol
         return f"{symbol}-USDT-SWAP"
 
     def _symbol_from_instrument(self, instrument_id: str) -> str:
-        """Extrae el símbolo lógico de un Instrument ID."""
         if instrument_id.endswith("-USDT-SWAP"):
             return instrument_id[:-len("-USDT-SWAP")]
         return instrument_id
@@ -272,3 +268,33 @@ class Exchange:
         if symbol:
             params["instId"] = self._instrument_id(symbol)
         return self._request_with_retry("GET", "/api/v5/trade/orders-algo-pending", params=params)
+
+    # ============================================================
+    # GESTIÓN DE APALANCAMIENTO (NUEVO)
+    # ============================================================
+
+    def set_leverage(self, symbol: str, leverage: int) -> Dict:
+        """
+        Establece el apalancamiento para un instrumento en modo Cross.
+        """
+        if not self._connected:
+            return {"ok": False, "error": "No conectado"}
+        instrument = self._instrument_id(symbol)
+        body = {
+            "instId": instrument,
+            "lever": str(leverage),
+            "mgnMode": "cross",
+        }
+        telemetry.log_debug("exchange", f"Estableciendo leverage {leverage}x para {instrument}")
+        return self._request_with_retry("POST", "/api/v5/account/set-leverage", body=body)
+
+    def get_leverage_info(self, symbol: str) -> Dict:
+        """
+        Consulta el leverage actual de un instrumento.
+        """
+        if not self._connected:
+            return {"ok": False, "error": "No conectado"}
+        instrument = self._instrument_id(symbol)
+        params = {"instId": instrument, "mgnMode": "cross"}
+        telemetry.log_debug("exchange", f"Consultando leverage para {instrument}")
+        return self._request_with_retry("GET", "/api/v5/account/leverage-info", params=params)
