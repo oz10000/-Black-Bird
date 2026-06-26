@@ -1,6 +1,7 @@
 # main.py
 # ============================================================
 # BOT PRINCIPAL – ORQUESTADOR CON SOPORTE MULTIESTRATEGIA
+# VERSIÓN CON set_leverage EN LA CONEXIÓN
 # ============================================================
 
 import os
@@ -130,6 +131,21 @@ class Bot:
         self.exchange = Exchange(self.api_key, self.secret_key, self.passphrase, self.demo)
         if self.exchange.connect():
             self.error_count = 0
+            # 🔥 NUEVO: Establecer apalancamiento para todos los símbolos
+            for symbol in SYMBOLS:
+                try:
+                    result = self.exchange.set_leverage(symbol, LEVERAGE)
+                    if result.get('ok'):
+                        telemetry.log_info("main", f"Apalancamiento {LEVERAGE}x establecido para {symbol}")
+                        # Confirmar (opcional, para logging)
+                        confirm = self.exchange.get_leverage_info(symbol)
+                        if confirm.get('ok'):
+                            lever = confirm.get('data', [{}])[0].get('lever', 'N/A')
+                            telemetry.log_debug("main", f"Leverage confirmado para {symbol}: {lever}x")
+                    else:
+                        telemetry.log_warning("main", f"Fallo al establecer leverage para {symbol}: {result}")
+                except Exception as e:
+                    telemetry.log_error("main", f"Excepción al establecer leverage para {symbol}: {e}")
             self.state = BotState.SYNC_EXCHANGE
         else:
             self.error_count += 1
@@ -170,6 +186,27 @@ class Bot:
             self.state = BotState.WAIT_NEXT_CYCLE
             return
 
+        # Verificar que no haya posición abierta
+        if self.position is not None:
+            telemetry.log_info("main", f"Posición activa ({self.position.symbol}), no se abrirán nuevas posiciones")
+            self.state = BotState.WAIT_NEXT_CYCLE
+            return
+
+        # Verificar órdenes pendientes (market orders en curso)
+        try:
+            pending_orders = self.exchange.get_pending_orders()
+            if pending_orders.get('ok') and pending_orders.get('data'):
+                telemetry.log_info("main", f"{len(pending_orders.get('data', []))} órdenes pendientes, esperando")
+                self.state = BotState.WAIT_NEXT_CYCLE
+                return
+        except:
+            pass
+
+        if MAX_OPEN_POSITIONS <= 0:
+            telemetry.log_error("main", "MAX_OPEN_POSITIONS es 0, no se puede operar")
+            self.state = BotState.WAIT_NEXT_CYCLE
+            return
+
         signal = get_best_signal()
         if signal:
             self.signal = signal
@@ -183,13 +220,79 @@ class Bot:
     def _open_position(self):
         telemetry.log_info("main", f"Abriendo posición: {self.signal.symbol} {self.signal.direction}")
 
-        # 🔥 CORRECCIÓN: Redondear tamaño al entero más cercano (mínimo 1 contrato)
-        size = self.signal.notional / self.signal.entry_price
-        size = max(1, round(size))   # Lote mínimo = 1 contrato
+        # ============================================================
+        # 1. Consultar balance disponible
+        # ============================================================
+        balance_resp = self.exchange.get_balance()
+        if not balance_resp.get('ok'):
+            telemetry.log_error("main", "No se pudo obtener balance", balance_resp)
+            self.state = BotState.ERROR_RECOVERY
+            return
 
-        actual_notional = size * self.signal.entry_price
-        telemetry.log_info("main", f"Tamaño ajustado: {size} contratos (notional ~{actual_notional:.2f} USDT)")
+        usdt_balance = 0.0
+        try:
+            details = balance_resp.get('data', [{}])[0].get('details', [])
+            for bal in details:
+                if bal.get('ccy') == 'USDT':
+                    usdt_balance = float(bal.get('availBal', 0))
+                    break
+        except Exception as e:
+            telemetry.log_error("main", f"Error al parsear balance: {e}")
+            self.state = BotState.ERROR_RECOVERY
+            return
 
+        telemetry.log_info("main", f"Balance disponible: {usdt_balance:.2f} USDT")
+
+        # ============================================================
+        # 2. Obtener parámetros del instrumento (ctVal, lotSz)
+        # ============================================================
+        symbol = self.signal.symbol
+        params = INSTRUMENT_PARAMS.get(symbol, {'ctVal': 1.0, 'lotSz': 0.01, 'minSz': 0.01})
+        ct_val = params['ctVal']
+        lot_sz = params['lotSz']
+        min_sz = params['minSz']
+
+        telemetry.log_info("main", f"ctVal={ct_val}, lotSz={lot_sz}, minSz={min_sz} para {symbol}")
+
+        # ============================================================
+        # 3. Calcular notional con leverage y ctVal
+        # ============================================================
+        safety_factor = 0.98
+        available_capital = usdt_balance * safety_factor
+        telemetry.log_info("main", f"Capital utilizable: {available_capital:.2f} USDT")
+
+        # Notional deseado = capital disponible * leverage
+        desired_notional = available_capital * LEVERAGE
+        telemetry.log_info("main", f"Notional deseado: {desired_notional:.2f} USDT (leverage {LEVERAGE}x)")
+
+        # Tamaño en contratos = notional / (precio * ctVal)
+        size = desired_notional / (self.signal.entry_price * ct_val)
+
+        # Redondear al múltiplo de lotSz
+        if lot_sz > 0:
+            size = round(size / lot_sz) * lot_sz
+        else:
+            size = round(size)
+
+        # Asegurar mínimo
+        if size < min_sz:
+            size = min_sz
+
+        # Asegurar que no sea cero
+        if size < min_sz:
+            size = min_sz
+
+        # Redondear a 2 decimales para evitar problemas de precisión
+        size = round(size, 2)
+
+        actual_notional = size * self.signal.entry_price * ct_val
+
+        telemetry.log_info("main", f"Tamaño ajustado: {size} contratos (notional real ~{actual_notional:.2f} USDT)")
+        telemetry.log_info("main", f"Valor nominal enviado a la API: {actual_notional:.2f} USDT")
+
+        # ============================================================
+        # 4. Enviar orden
+        # ============================================================
         side = "buy" if self.signal.direction == "Long" else "sell"
 
         order = self.exchange.place_market_order(self.signal.symbol, side, size)
@@ -228,7 +331,9 @@ class Bot:
             repair_attempts=0
         )
 
-        # Enviar TP/SL
+        # ============================================================
+        # 5. Enviar TP/SL
+        # ============================================================
         if self.signal.target_price and self.signal.stop_loss:
             if self.position.side == 'long':
                 tp_side, sl_side = 'sell', 'sell'
@@ -275,7 +380,9 @@ class Bot:
                 else:
                     telemetry.log_error("main", "Fallo al enviar trailing", trail_resp)
 
-        # Guardar estado
+        # ============================================================
+        # 6. Guardar estado
+        # ============================================================
         self.state_data['trades'].append({
             'symbol': self.position.symbol,
             'side': self.position.side,
@@ -283,6 +390,9 @@ class Bot:
             'tp': self.signal.target_price,
             'sl': self.signal.stop_loss,
             'size': self.position.size,
+            'notional': actual_notional,
+            'leverage': LEVERAGE,
+            'ctVal': ct_val,
             'timestamp': datetime.utcnow().isoformat()
         })
         save_state(self.state_data)
