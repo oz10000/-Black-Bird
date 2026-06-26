@@ -1,8 +1,6 @@
 # exchange.py
 # ============================================================
-# CLIENTE OKX V5 PARA FUTUROS (SWAP)
-# BASADO EN EL VERIFICADOR PYDROID (v9)
-# CORRECCIÓN: posSide OBLIGATORIO para todas las órdenes de futuros
+# CLIENTE OKX V5 PARA FUTUROS (SWAP) – CONVERSIÓN INTERNA DE SÍMBOLOS
 # ============================================================
 
 import time
@@ -27,18 +25,34 @@ class Exchange:
         self._connected = False
         self._time_offset = 0
         self._last_sync_time = 0
-        self._sync_interval = 30  # Segundos
+        self._sync_interval = 30
 
-    # ============================================================
-    # 1. SINCRONIZACIÓN HORARIA (ROBUSTA)
-    # ============================================================
+    # ------------------------------------------------------------
+    # Conversión de símbolos (único punto de verdad)
+    # ------------------------------------------------------------
+    def _instrument_id(self, symbol: str) -> str:
+        """
+        Convierte símbolo lógico (ej. 'BTC') a Instrument ID de OKX (ej. 'BTC-USDT-SWAP').
+        Si ya tiene el formato completo, lo devuelve tal cual.
+        """
+        symbol = symbol.upper().strip()
+        if symbol.endswith("-USDT-SWAP"):
+            return symbol
+        return f"{symbol}-USDT-SWAP"
 
+    def _symbol_from_instrument(self, instrument_id: str) -> str:
+        """Extrae el símbolo lógico de un Instrument ID."""
+        if instrument_id.endswith("-USDT-SWAP"):
+            return instrument_id[:-len("-USDT-SWAP")]
+        return instrument_id
+
+    # ------------------------------------------------------------
+    # Sincronización horaria
+    # ------------------------------------------------------------
     def _iso_timestamp(self) -> str:
-        """Timestamp en formato ISO 8601 (requerido por OKX V5)."""
         return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     def _sync_time(self, force: bool = False) -> bool:
-        """Obtiene el timestamp del servidor y calcula el offset."""
         now = time.time()
         if not force and (now - self._last_sync_time) < self._sync_interval:
             return True
@@ -50,45 +64,34 @@ class Exchange:
                 local_ts = int(time.time() * 1000)
                 self._time_offset = server_ts - local_ts
                 self._last_sync_time = now
-                telemetry.log_debug("exchange", f"Sincronización horaria: offset={self._time_offset}ms")
+                telemetry.log_debug("exchange", f"Offset horario: {self._time_offset}ms")
                 return True
         except Exception as e:
             telemetry.log_error("exchange", f"Error en _sync_time: {e}")
         return False
 
     def _ensure_sync(self):
-        """Asegura que el timestamp esté sincronizado antes de firmar."""
         self._sync_time()
 
-    # ============================================================
-    # 2. FIRMA Y PETICIONES (CON REINTENTO 50102)
-    # ============================================================
-
-    def _sign_request(self, method: str, path: str, params: Dict = None, body: Dict = None) -> tuple:
-        """
-        Firma la petición según OKX V5.
-        Devuelve (headers, body_str).
-        """
+    # ------------------------------------------------------------
+    # Firma y peticiones
+    # ------------------------------------------------------------
+    def _sign_request(self, method: str, path: str, params: Dict = None, body: Dict = None):
         self._ensure_sync()
-
         timestamp = self._iso_timestamp()
         if body:
             body_str = json.dumps(body, separators=(",", ":"))
         else:
             body_str = ""
-
         if params:
             query = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
             full_path = f"{path}?{query}"
         else:
             full_path = path
-
-        # Cadena a firmar: timestamp + method + path + body
         sign_str = timestamp + method + full_path + body_str
         signature = base64.b64encode(
             hmac.new(self.secret_key.encode(), sign_str.encode(), hashlib.sha256).digest()
         ).decode()
-
         headers = {
             "OK-ACCESS-KEY": self.api_key,
             "OK-ACCESS-SIGN": signature,
@@ -96,35 +99,24 @@ class Exchange:
             "OK-ACCESS-PASSPHRASE": self.passphrase,
             "Content-Type": "application/json",
         }
-        # Modo demo (simulación)
         if self.demo:
             headers["x-simulated-trading"] = "1"
-
         return headers, body_str
 
     def _handle_response(self, response: requests.Response) -> Dict:
-        """Procesa la respuesta de OKX."""
         try:
             data = response.json()
         except:
             return {"ok": False, "error": "Invalid JSON response"}
-
-        # OKX devuelve "code": "0" para éxito, "sMsg" para mensajes de orden
         if data.get("code") != "0":
             msg = data.get("msg", "Unknown error")
-            # Algunos endpoints usan "sMsg" dentro de los datos
             if "sMsg" in data:
                 msg = data["sMsg"]
             return {"ok": False, "error": msg, "raw": data}
-
         return {"ok": True, "data": data.get("data", [])}
 
     def _request_with_retry(self, method: str, path: str, params: Dict = None, body: Dict = None) -> Dict:
-        """
-        Ejecuta la petición con reintento automático en caso de error 50102 (timestamp expirado).
-        """
         headers, body_str = self._sign_request(method, path, params, body)
-
         try:
             if method == "GET":
                 resp = self.session.get(
@@ -144,29 +136,22 @@ class Exchange:
             return {"ok": False, "error": "Timeout"}
         except Exception as e:
             return {"ok": False, "error": str(e)}
-
         result = self._handle_response(resp)
-
-        # Si falla por timestamp expirado, resincronizar y reintentar una vez
         if not result.get("ok") and "50102" in str(result.get("raw", {}).get("code", "")):
-            telemetry.log_warning("exchange", "Error 50102 detectado, resincronizando y reintentando")
+            telemetry.log_warning("exchange", "Error 50102 detectado, resincronizando")
             self._sync_time(force=True)
-            # Reintentar sin posibilidad de bucle infinito
             headers2, body_str2 = self._sign_request(method, path, params, body)
             if method == "GET":
                 resp2 = self.session.get(f"{self.base_url}{path}", headers=headers2, params=params, timeout=ORDER_TIMEOUT)
             else:
                 resp2 = self.session.post(f"{self.base_url}{path}", headers=headers2, data=body_str2, timeout=ORDER_TIMEOUT)
             return self._handle_response(resp2)
-
         return result
 
-    # ============================================================
-    # 3. CONEXIÓN
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Conexión
+    # ------------------------------------------------------------
     def connect(self) -> bool:
-        """Verifica la conexión y sincroniza el tiempo."""
         try:
             self._sync_time(force=True)
             resp = self.session.get(f"{self.base_url}/api/v5/public/time", timeout=10)
@@ -179,137 +164,111 @@ class Exchange:
             telemetry.log_error("exchange", f"Error en connect: {e}")
         return False
 
-    # ============================================================
-    # 4. CUENTA Y BALANCE
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Cuenta y balance
+    # ------------------------------------------------------------
     def get_balance(self) -> Dict:
-        """Obtiene el balance de la cuenta."""
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
         return self._request_with_retry("GET", "/api/v5/account/balance")
 
-    # ============================================================
-    # 5. POSICIONES
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Posiciones (acepta símbolo lógico)
+    # ------------------------------------------------------------
     def get_positions(self, symbol: Optional[str] = None) -> Dict:
-        """Obtiene las posiciones abiertas. Si symbol es None, devuelve todas."""
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
         params = {}
         if symbol:
-            params["instId"] = symbol
+            params["instId"] = self._instrument_id(symbol)
         return self._request_with_retry("GET", "/api/v5/account/positions", params=params)
 
-    # ============================================================
-    # 6. ÓRDENES DE MERCADO (CON posSide)
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Órdenes de mercado (acepta símbolo lógico)
+    # ------------------------------------------------------------
     def place_market_order(self, symbol: str, side: str, size: float) -> Dict:
-        """
-        Abre una orden de mercado en futuros.
-        - side: 'buy' (Long) o 'sell' (Short)
-        - size: cantidad de contratos
-        """
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
-
+        instrument = self._instrument_id(symbol)
         pos_side = "long" if side.lower() == "buy" else "short"
         body = {
-            "instId": symbol,
+            "instId": instrument,
             "tdMode": "cross",
             "side": side.lower(),
-            "posSide": pos_side,      # OBLIGATORIO para futuros SWAP
+            "posSide": pos_side,
             "ordType": "market",
             "sz": str(size),
         }
-        telemetry.log_debug("exchange", f"Market order: {symbol} {side} size={size} posSide={pos_side}")
+        telemetry.log_debug("exchange", f"Market order: {instrument} {side} size={size}")
         return self._request_with_retry("POST", "/api/v5/trade/order", body=body)
 
-    # ============================================================
-    # 7. ÓRDENES CONDICIONADAS (TP/SL) (CON posSide)
-    # ============================================================
-
-    def place_algo_order(self, symbol: str, side: str, trigger_price: float, order_price: float, size: float, order_type: str = "conditional") -> Dict:
-        """
-        Coloca una orden condicionada (Take Profit o Stop Loss).
-        - side: 'buy' o 'sell' (dirección de la orden condicionada)
-        - trigger_price: precio que activa la orden
-        - order_price: precio de ejecución (-1 para mercado)
-        """
+    # ------------------------------------------------------------
+    # Órdenes condicionadas (TP/SL) (acepta símbolo lógico)
+    # ------------------------------------------------------------
+    def place_algo_order(self, symbol: str, side: str, trigger_price: float, order_price: float,
+                         size: float, order_type: str = "conditional") -> Dict:
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
-
+        instrument = self._instrument_id(symbol)
         pos_side = "long" if side.lower() == "buy" else "short"
-        # Usamos 'trigger' para TP/SL (OKX lo acepta)
         body = {
-            "instId": symbol,
+            "instId": instrument,
             "tdMode": "cross",
             "side": side.lower(),
-            "posSide": pos_side,      # OBLIGATORIO
-            "ordType": "trigger",     # 'conditional' también funciona, pero 'trigger' es más simple
+            "posSide": pos_side,
+            "ordType": "trigger",
             "sz": str(size),
             "triggerPx": str(trigger_price),
             "orderPx": str(order_price),
             "triggerPxType": "last",
         }
-        telemetry.log_debug("exchange", f"Algo order: {symbol} {side} trigger={trigger_price} order={order_price}")
+        telemetry.log_debug("exchange", f"Algo order: {instrument} {side} trigger={trigger_price}")
         return self._request_with_retry("POST", "/api/v5/trade/order-algo", body=body)
 
-    # ============================================================
-    # 8. TRAILING STOP (CON posSide)
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Trailing stop (acepta símbolo lógico)
+    # ------------------------------------------------------------
     def place_trailing_order(self, symbol: str, side: str, size: float, callback_rate: float) -> Dict:
-        """
-        Coloca un trailing stop nativo.
-        - callback_rate: porcentaje de trailing (ej. 0.008 = 0.8%)
-        """
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
-
+        instrument = self._instrument_id(symbol)
         pos_side = "long" if side.lower() == "buy" else "short"
         body = {
-            "instId": symbol,
+            "instId": instrument,
             "tdMode": "cross",
             "side": side.lower(),
-            "posSide": pos_side,      # OBLIGATORIO
+            "posSide": pos_side,
             "ordType": "move_order_stop",
             "sz": str(size),
             "callbackRatio": str(callback_rate),
         }
-        telemetry.log_debug("exchange", f"Trailing order: {symbol} {side} callback={callback_rate}")
+        telemetry.log_debug("exchange", f"Trailing order: {instrument} callback={callback_rate}")
         return self._request_with_retry("POST", "/api/v5/trade/order-algo", body=body)
 
-    # ============================================================
-    # 9. CANCELACIONES
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Cancelaciones (acepta símbolo lógico)
+    # ------------------------------------------------------------
     def cancel_order(self, order_id: str, symbol: str) -> Dict:
-        """Cancela una orden de mercado/limit normal."""
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
-        body = {"ordId": order_id, "instId": symbol}
+        instrument = self._instrument_id(symbol)
+        body = {"ordId": order_id, "instId": instrument}
         return self._request_with_retry("POST", "/api/v5/trade/cancel-order", body=body)
 
     def cancel_algo_order(self, algo_id: str, symbol: str) -> Dict:
-        """Cancela una orden algorítmica (TP/SL/Trailing)."""
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
-        # OKX requiere lista de objetos para cancelar algoritmos
-        body = [{"algoId": algo_id, "instId": symbol}]
+        instrument = self._instrument_id(symbol)
+        body = [{"algoId": algo_id, "instId": instrument}]
         return self._request_with_retry("POST", "/api/v5/trade/cancel-algos", body=body)
 
-    # ============================================================
-    # 10. CONSULTA DE ÓRDENES PENDIENTES
-    # ============================================================
-
+    # ------------------------------------------------------------
+    # Consulta de órdenes pendientes (acepta símbolo lógico)
+    # ------------------------------------------------------------
     def get_pending_algo_orders(self, symbol: Optional[str] = None) -> Dict:
-        """Obtiene órdenes algorítmicas pendientes (TP/SL/Trailing)."""
         if not self._connected:
             return {"ok": False, "error": "No conectado"}
         params = {"ordType": "trigger,move_order_stop"}
         if symbol:
-            params["instId"] = symbol
+            params["instId"] = self._instrument_id(symbol)
         return self._request_with_retry("GET", "/api/v5/trade/orders-algo-pending", params=params)
