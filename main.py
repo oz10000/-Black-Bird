@@ -170,7 +170,6 @@ class Bot:
             self.state = BotState.WAIT_NEXT_CYCLE
             return
 
-        # La estrategia activa se selecciona en strategy.py
         signal = get_best_signal()
         if signal:
             self.signal = signal
@@ -183,7 +182,14 @@ class Bot:
 
     def _open_position(self):
         telemetry.log_info("main", f"Abriendo posición: {self.signal.symbol} {self.signal.direction}")
+
+        # 🔥 CORRECCIÓN: Redondear tamaño al entero más cercano (mínimo 1 contrato)
         size = self.signal.notional / self.signal.entry_price
+        size = max(1, round(size))   # Lote mínimo = 1 contrato
+
+        actual_notional = size * self.signal.entry_price
+        telemetry.log_info("main", f"Tamaño ajustado: {size} contratos (notional ~{actual_notional:.2f} USDT)")
+
         side = "buy" if self.signal.direction == "Long" else "sell"
 
         order = self.exchange.place_market_order(self.signal.symbol, side, size)
@@ -222,7 +228,7 @@ class Bot:
             repair_attempts=0
         )
 
-        # Enviar TP/SL (usando parámetros de la señal)
+        # Enviar TP/SL
         if self.signal.target_price and self.signal.stop_loss:
             if self.position.side == 'long':
                 tp_side, sl_side = 'sell', 'sell'
@@ -256,12 +262,11 @@ class Bot:
             else:
                 telemetry.log_error("main", "Fallo al enviar SL", sl_resp)
 
-            # Si trailing está activo, enviar trailing
             if TRAILING_ENABLED and TRAILING_MODE == 'native':
                 callback = TRAILING_DISTANCE_ATR * 0.01
                 trail_resp = self.exchange.place_trailing_order(
                     symbol=self.position.symbol,
-                    side=tp_side,  # misma dirección que TP
+                    side=tp_side,
                     size=self.position.size,
                     callback_rate=callback
                 )
@@ -277,6 +282,7 @@ class Bot:
             'entry': self.position.entry_price,
             'tp': self.signal.target_price,
             'sl': self.signal.stop_loss,
+            'size': self.position.size,
             'timestamp': datetime.utcnow().isoformat()
         })
         save_state(self.state_data)
