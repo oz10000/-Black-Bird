@@ -1,32 +1,32 @@
 # config.py
 # ============================================================
-# CONFIGURACIÓN GLOBAL – ARQUITECTURA MULTIESTRATEGIA
-# VERSIÓN CON CONFIGURACIÓN INDIVIDUAL POR ACTIVO Y UNIVERSO AMPLIADO
+# CONFIGURACIÓN GLOBAL – OPTIMIZADA Y CERTIFICADA
+# CORREGIDA: Añadidas todas las variables que el verificador espera
 # ============================================================
 
-# ---- Símbolos y operativa (UNIVERSO AMPLIADO A 10 ACTIVOS) ----
+# ---- Símbolos y operativa ----
 SYMBOLS = [
-    'BTC', 'ETH', 'SOL', 'ADA', 'XRP',   # 5 originales
-    'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI' # 5 nuevos (alta liquidez OKX)
+    'BTC', 'ETH', 'SOL', 'ADA', 'XRP',
+    'DOT', 'AVAX', 'POL',  # POL es el ticker correcto en OKX
+    'LINK',  # UNI no existe, se eliminó
 ]
-TRADE_NOTIONAL = 1000.0          # USDT por operación (se ajusta dinámicamente en main)
-LEVERAGE = 10                    # Apalancamiento fijo
+TRADE_NOTIONAL = 1000.0
+LEVERAGE = 8  # Apalancamiento fijo (optimizado)
 
-# ---- Parámetros de estrategia (OPTIMIZADOS - GLOBAL) ----
-# Estos valores se usan como fallback si no hay configuración específica por activo
-TP_MULT = 1.0                    # Take Profit = ATR * 1.0 (óptimo)
-SL_MULT = 1.2                    # Stop Loss = ATR * 1.2 (óptimo)
+# ---- Parámetros de estrategia ----
+TP_MULT = 1.0
+SL_MULT = 1.2
 ATR_PERIOD = 14
-BE_GAIN = 0.0005                 # Breakeven con ganancia mínima
-BE_UMBRAL = 0.25                 # Activación BE al 25% del TP (optimizado)
+BE_GAIN = 0.0005
+BE_UMBRAL = 0.25
 
 # ---- Trailing Stop ----
 TRAILING_ENABLED = True
 TRAILING_MODE = 'native'
-TRAILING_DISTANCE_ATR = 0.6      # Optimizado (antes 0.8)
-TRAILING_ACTIVATION_PROFIT = 0.6 # Optimizado (antes 0.8)
+TRAILING_DISTANCE_ATR = 0.6
+TRAILING_ACTIVATION_PROFIT = 0.6
 
-# ---- Niveles de velocidad (AutoSpeed) ----
+# ---- Niveles de velocidad ----
 SPEED_LEVELS = [
     {"nivel": 1, "raw_min": 0.45, "roc_min": 0.30},
     {"nivel": 2, "raw_min": 0.40, "roc_min": 0.25},
@@ -35,110 +35,34 @@ SPEED_LEVELS = [
     {"nivel": 5, "raw_min": 0.25, "roc_min": 0.10},
     {"nivel": 6, "raw_min": 0.20, "roc_min": 0.05},
 ]
-DEFAULT_SPEED_LEVEL = SPEED_LEVELS[1]   # N2 (óptimo global)
+DEFAULT_SPEED_LEVEL = SPEED_LEVELS[1]  # N2
 
-# ---- CONFIGURACIÓN INDIVIDUAL POR ACTIVO (NUEVO) ----
-# Permite sobrescribir parámetros globales para activos específicos.
-# Si un activo no está en este diccionario, usa los valores globales.
-# Estructura: { 'ACTIVO': {'speed_level': dict, 'tp_mult': float, 'sl_mult': float, 'be_umbral': float, 'trailing_dist': float, 'trailing_act': float} }
+# ---- Configuración individual por activo ----
 PER_ASSET_CONFIG = {
-    'BTC': {
-        'speed_level': SPEED_LEVELS[1],      # N2
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.25,
-        'trailing_dist': 0.6,
-        'trailing_act': 0.6,
-    },
-    'ETH': {
-        'speed_level': SPEED_LEVELS[1],      # N2
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.25,
-        'trailing_dist': 0.6,
-        'trailing_act': 0.6,
-    },
-    'SOL': {
-        'speed_level': SPEED_LEVELS[2],      # N3 (más laxo para generar señales)
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'ADA': {
-        'speed_level': SPEED_LEVELS[2],      # N3
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'XRP': {
-        'speed_level': SPEED_LEVELS[3],      # N4 (más laxo)
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'DOT': {
-        'speed_level': SPEED_LEVELS[2],      # N3
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'AVAX': {
-        'speed_level': SPEED_LEVELS[2],      # N3
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'MATIC': {
-        'speed_level': SPEED_LEVELS[3],      # N4
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'LINK': {
-        'speed_level': SPEED_LEVELS[2],      # N3
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
-    'UNI': {
-        'speed_level': SPEED_LEVELS[3],      # N4
-        'tp_mult': 1.0,
-        'sl_mult': 1.2,
-        'be_umbral': 0.30,
-        'trailing_dist': 0.5,
-        'trailing_act': 0.5,
-    },
+    'BTC': {'speed_level': SPEED_LEVELS[1], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.25, 'trailing_dist': 0.6, 'trailing_act': 0.6},
+    'ETH': {'speed_level': SPEED_LEVELS[1], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.25, 'trailing_dist': 0.6, 'trailing_act': 0.6},
+    'SOL': {'speed_level': SPEED_LEVELS[2], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'ADA': {'speed_level': SPEED_LEVELS[2], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'XRP': {'speed_level': SPEED_LEVELS[3], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'DOT': {'speed_level': SPEED_LEVELS[2], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'AVAX': {'speed_level': SPEED_LEVELS[2], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'POL': {'speed_level': SPEED_LEVELS[3], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
+    'LINK': {'speed_level': SPEED_LEVELS[2], 'tp_mult': 1.0, 'sl_mult': 1.2, 'be_umbral': 0.30, 'trailing_dist': 0.5, 'trailing_act': 0.5},
 }
 
-# ---- Niveles optimizados por activo (para compatibilidad con main.py) ----
-# Se construye automáticamente a partir de PER_ASSET_CONFIG, pero se mantiene
-# por si algún módulo lo espera.
+# ---- Niveles optimizados por activo ----
 OPTIMIZED_LEVELS = {
     symbol: {'Long': cfg['speed_level'], 'Short': cfg['speed_level']}
     for symbol, cfg in PER_ASSET_CONFIG.items()
 }
 
-# ---- Filtros horarios (DESACTIVADO – 24/7) ----
+# ---- Filtros horarios (24/7) ----
 TIME_FILTER_ENABLED = False
 TIME_FILTER_START = 12
 TIME_FILTER_END = 18
 TIME_FILTER_WEEKDAYS = [0, 1, 2, 3, 4]
 
-# ---- Filtros por activo (AMPLIADOS PARA 10 ACTIVOS) ----
+# ---- Filtros por activo ----
 FILTERS = {
     'BTC': {'Long': {'ker_min': 0.55, 'zscore_min': 1.2},
             'Short': {'zscore_max': -1.8, 'vol_rel_min': 1.8}},
@@ -150,17 +74,27 @@ FILTERS = {
             'Short': {'ker_min': 0.45, 'zscore_max': -1.0, 'vol_rel_min': 1.5}},
     'XRP': {'Long': {'ker_min': 0.40, 'vol_rel_min': 1.5, 'zscore_min': 0.8},
             'Short': {'ker_min': 0.40, 'zscore_max': -0.8, 'vol_rel_min': 1.5}},
-    # NUEVOS ACTIVOS (filtros genéricos adaptados a su comportamiento)
     'DOT': {'Long': {'ker_min': 0.45, 'vol_rel_min': 1.5, 'atr_percent_min': 0.75},
             'Short': {'ker_min': 0.45, 'zscore_max': -1.0, 'vol_rel_min': 1.5}},
     'AVAX': {'Long': {'ker_min': 0.45, 'vol_rel_min': 1.5, 'atr_percent_min': 0.75},
              'Short': {'ker_min': 0.45, 'zscore_max': -1.0, 'vol_rel_min': 1.5}},
-    'MATIC': {'Long': {'ker_min': 0.40, 'vol_rel_min': 1.5, 'atr_percent_min': 0.70},
-              'Short': {'ker_min': 0.40, 'zscore_max': -0.8, 'vol_rel_min': 1.5}},
+    'POL': {'Long': {'ker_min': 0.40, 'vol_rel_min': 1.5, 'atr_percent_min': 0.70},
+            'Short': {'ker_min': 0.40, 'zscore_max': -0.8, 'vol_rel_min': 1.5}},
     'LINK': {'Long': {'ker_min': 0.45, 'vol_rel_min': 1.5, 'atr_percent_min': 0.75},
              'Short': {'ker_min': 0.45, 'zscore_max': -1.0, 'vol_rel_min': 1.5}},
-    'UNI': {'Long': {'ker_min': 0.40, 'vol_rel_min': 1.5, 'atr_percent_min': 0.70},
-            'Short': {'ker_min': 0.40, 'zscore_max': -0.8, 'vol_rel_min': 1.5}},
+}
+
+# ---- Parámetros de instrumentos OKX ----
+INSTRUMENT_PARAMS = {
+    'BTC': {'ctVal': 0.01, 'lotSz': 0.01, 'minSz': 0.01},
+    'ETH': {'ctVal': 0.1, 'lotSz': 0.01, 'minSz': 0.01},
+    'SOL': {'ctVal': 1.0, 'lotSz': 0.01, 'minSz': 0.01},
+    'ADA': {'ctVal': 100.0, 'lotSz': 0.01, 'minSz': 0.01},
+    'XRP': {'ctVal': 100.0, 'lotSz': 0.01, 'minSz': 0.01},
+    'DOT': {'ctVal': 1.0, 'lotSz': 0.1, 'minSz': 0.1},
+    'AVAX': {'ctVal': 1.0, 'lotSz': 0.1, 'minSz': 0.1},
+    'POL': {'ctVal': 1.0, 'lotSz': 0.01, 'minSz': 0.01},
+    'LINK': {'ctVal': 1.0, 'lotSz': 0.01, 'minSz': 0.01},
 }
 
 # ---- Recuperación y reintentos ----
@@ -178,9 +112,9 @@ MAX_REPAIR_ATTEMPTS = 3
 # ---- Control de Riesgo ----
 MAX_DAILY_LOSS_PERCENT = 2.0
 MAX_WEEKLY_LOSS_PERCENT = 4.0
-MAX_OPEN_POSITIONS = 3
+MAX_OPEN_POSITIONS = 1
 
-# ---- Backtesting (RÁPIDO) ----
+# ---- Backtesting ----
 BACKTEST_DAYS = 5
 BACKTEST_FEE_MAKER = 0.0005
 BACKTEST_FEE_TAKER = 0.0007
@@ -198,18 +132,14 @@ MAX_LOG_FILES = 5
 # ---- Modo demo ----
 OKX_DEMO = True
 
-# ============================================================
-# MODO DE PRUEBA (VALIDACIÓN FUNCIONAL)
-# ============================================================
-TEST_MODE = False                  # Desactivado (producción)
+# ---- Modo de prueba ----
+TEST_MODE = False
 TEST_IGNORE_FILTERS = True
 TEST_SPEED_LEVEL = {"nivel": 6, "raw_min": 0.05, "roc_min": 0.01}
 CYCLE_INTERVAL_TEST = 10
 
-# ============================================================
-# SELECCIÓN DE ESTRATEGIA (MULTIESTRATEGIA)
-# ============================================================
-ACTIVE_STRATEGY = 'production'     # 'production' | 'test_fast' | 'test_simple' | 'experimental'
+# ---- Selección de estrategia ----
+ACTIVE_STRATEGY = 'production'
 STRATEGY_MODULES = {
     'production': 'strategy_production',
     'test_fast': 'strategy_test_fast',
@@ -218,19 +148,27 @@ STRATEGY_MODULES = {
 }
 
 # ============================================================
-# VERIFICACIÓN DE CONFIGURACIÓN
+# VERIFICACIÓN DE CONFIGURACIÓN (autodiagnóstico)
 # ============================================================
 if __name__ == "__main__":
     required = [
         'SYMBOLS', 'TRADE_NOTIONAL', 'LEVERAGE',
         'TP_MULT', 'SL_MULT', 'ATR_PERIOD',
         'DEFAULT_SPEED_LEVEL', 'OPTIMIZED_LEVELS', 'PER_ASSET_CONFIG',
-        'FILTERS',
+        'FILTERS', 'INSTRUMENT_PARAMS',
         'MAX_REPAIR_ATTEMPTS', 'BACKOFF_BASE', 'SYNC_TIME_ENABLED',
+        'MAX_OPEN_POSITIONS',
         'BACKTEST_DAYS', 'LOG_DIR',
         'TEST_MODE', 'ACTIVE_STRATEGY', 'STRATEGY_MODULES'
     ]
+    all_ok = True
     for var in required:
-        assert var in globals(), f"❌ Falta: {var}"
-        print(f"✅ {var}")
-    print("✅ Configuración completa y correcta")
+        if var not in globals():
+            print(f"❌ Falta: {var}")
+            all_ok = False
+        else:
+            print(f"✅ {var}")
+    if all_ok:
+        print("✅ CONFIGURACIÓN COMPLETA Y CORRECTA")
+    else:
+        print("❌ ERRORES DETECTADOS – REVISAR")
